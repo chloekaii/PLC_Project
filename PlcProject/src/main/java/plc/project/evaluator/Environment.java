@@ -1,7 +1,11 @@
 package plc.project.evaluator;
 
+import java.math.BigInteger;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+
+import static plc.project.evaluator.Evaluator.requireType;
 
 public final class Environment {
 
@@ -68,7 +72,30 @@ public final class Environment {
      * all integers in that range (inclusive, exclusive).
      */
     private static RuntimeValue range(List<RuntimeValue> arguments) throws EvaluateException {
-        throw new UnsupportedOperationException("TODO"); //TODO
+        if (arguments.size() != 2) {
+            throw new EvaluateException("Expected range to be called with exactly 2 arguments.");
+        }
+
+        if (!(arguments.get(0) instanceof RuntimeValue.Primitive pStart) ||
+                !(arguments.get(1) instanceof RuntimeValue.Primitive pEnd)) {
+            throw new EvaluateException("Range arguments must be primitives.");
+        }
+
+        if (!(pStart.value() instanceof BigInteger start) ||
+                !(pEnd.value() instanceof BigInteger end)) {
+            throw new EvaluateException("Range arguments must be BigInteger.");
+        }
+
+        if (start.compareTo(end) > 0) {
+            throw new EvaluateException("Range start must be <= end.");
+        }
+
+        List<RuntimeValue> rangeList = new ArrayList<>();
+        for (BigInteger i = start; i.compareTo(end) < 0; i = i.add(BigInteger.ONE)) {
+            rangeList.add(new RuntimeValue.Primitive(i));
+        }
+
+        return new RuntimeValue.Primitive(rangeList);
     }
 
     /**
