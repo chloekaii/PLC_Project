@@ -1,12 +1,12 @@
-package plc.project.evaluator;
+package plc.project.analyzer;
 
 /**
  * IMPORTANT: DO NOT CHANGE! This file is part of our project's API and should
  * not be modified by your solution.
  */
-public final class EvaluateException extends Exception {
+public final class AnalyzeException extends Exception {
 
-    public EvaluateException(String message) {
+    public AnalyzeException(String message) {
         super(message);
     }
 

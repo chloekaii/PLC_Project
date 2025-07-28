@@ -4,6 +4,10 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 
+/**
+ * IMPORTANT: DO NOT CHANGE! This file is part of our project's API and should
+ * not be modified by your solution.
+ */
 public final class Scope {
 
     private final Scope parent;

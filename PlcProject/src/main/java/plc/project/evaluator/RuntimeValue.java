@@ -6,11 +6,23 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
+/**
+ * IMPORTANT: DO NOT CHANGE! This file is part of our project's API and should
+ * not be modified by your solution.
+ */
 public sealed interface RuntimeValue {
 
     record Primitive(
         @Nullable Object value
-    ) implements RuntimeValue {}
+    ) implements RuntimeValue {
+
+        @Override
+        public String toString() {
+            var clazz = value != null ? value.getClass().getSimpleName() : "N/A";
+            return "Primitive[value=" + value + ", class=" + clazz + "]";
+        }
+
+    }
 
     record Function(
         String name,

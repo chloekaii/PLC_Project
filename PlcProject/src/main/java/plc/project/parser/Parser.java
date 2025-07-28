@@ -67,6 +67,16 @@ public final class Parser {
         tokens.match(Token.Type.IDENTIFIER);
         String name = tokens.get(-1).literal();
 
+        Optional<String> type = Optional.empty();
+        if (tokens.peek(":")) {
+            tokens.match(":");
+            if (!tokens.peek(Token.Type.IDENTIFIER)) {
+                throw new ParseException("Expected identifier after ':'");
+            }
+            tokens.match(Token.Type.IDENTIFIER);
+            type = Optional.of(tokens.get(-1).literal());
+        }
+
         Optional<Ast.Expr> value = Optional.empty();
         if (tokens.peek("=")) {
             tokens.match("=");
@@ -78,18 +88,18 @@ public final class Parser {
         }
         tokens.match(";");
 
-        return new Ast.Stmt.Let(name, value);
+        return new Ast.Stmt.Let(name, type, value);
     }
 
-    private Ast.Stmt.Def parseDefStmt() throws ParseException { // TODO: test when done
-        // def_stmt ::= 'DEF' identifier '(' (identifier (',' identifier)*)? ')' 'DO' stmt* 'END'
+    private Ast.Stmt.Def parseDefStmt() throws ParseException {
+        // def_stmt ::= 'DEF' identifier '(' (identifier (':' identifier)? (',' identifier (':' identifier)?)*)? ')' (':' identifier)? 'DO' stmt* 'END'
         if (!tokens.peek("DEF")) {
             throw new ParseException("DEF expected");
         }
         tokens.match("DEF");
 
         if (!tokens.peek(Token.Type.IDENTIFIER)) {
-            throw new ParseException("Expected identifier after 'FOR'.");
+            throw new ParseException("Expected identifier after 'DEF'.");
         }
         tokens.match(Token.Type.IDENTIFIER);
         String name = tokens.get(-1).literal();
@@ -100,16 +110,33 @@ public final class Parser {
         tokens.match("(");
 
         List<String> parameters = new ArrayList<>();
-        while (!tokens.peek(")")) {
-            do {
-                tokens.match(Token.Type.IDENTIFIER);
-                parameters.add(tokens.get(-1).literal());
-            } while (tokens.match(","));
+        List<Optional<String>> parameterTypes = new ArrayList<>();
+
+        if (!tokens.peek(")")) {
+            parseParameter(parameters, parameterTypes);
+
+            while (tokens.match(",")) {
+                if (!tokens.peek(Token.Type.IDENTIFIER)) {
+                    throw new ParseException("Expected parameter after ','");
+                }
+                parseParameter(parameters, parameterTypes);
+            }
         }
+
         if (!tokens.peek(")")) {
             throw new ParseException("Expected ')'");
         }
         tokens.match(")");
+
+        Optional<String> returnType = Optional.empty();
+        if (tokens.peek(":")) {
+            tokens.match(":");
+            if (!tokens.peek(Token.Type.IDENTIFIER)) {
+                throw new ParseException("Expected identifier after ':'");
+            }
+            tokens.match(Token.Type.IDENTIFIER);
+            returnType = Optional.of(tokens.get(-1).literal());
+        }
 
         if (!tokens.peek("DO")) {
             throw new ParseException("DO expected");
@@ -126,10 +153,31 @@ public final class Parser {
         }
         tokens.match("END");
 
-        return new Ast.Stmt.Def(name, parameters, body);
+        return new Ast.Stmt.Def(name, parameters, parameterTypes, returnType, body);
     }
 
-    private Ast.Stmt.If parseIfStmt() throws ParseException { // TODO: test when done
+    private void parseParameter(List<String> parameters, List<Optional<String>> parameterTypes) throws ParseException {
+        if (!tokens.peek(Token.Type.IDENTIFIER)) {
+            throw new ParseException("Expected identifier in parameter list.");
+        }
+        tokens.match(Token.Type.IDENTIFIER);
+        String param = tokens.get(-1).literal();
+        parameters.add(param);
+
+        Optional<String> type = Optional.empty();
+        if (tokens.peek(":")) {
+            tokens.match(":");
+            if (!tokens.peek(Token.Type.IDENTIFIER)) {
+                throw new ParseException("Expected identifier after ':'");
+            }
+            tokens.match(Token.Type.IDENTIFIER);
+            type = Optional.of(tokens.get(-1).literal());
+        }
+
+        parameterTypes.add(type);
+    }
+
+    private Ast.Stmt.If parseIfStmt() throws ParseException {
         // if_stmt ::= 'IF' expr 'DO' stmt* ('ELSE' stmt*)? 'END'
         if (!tokens.peek("IF")) {
             throw new ParseException("IF expected");
@@ -164,7 +212,7 @@ public final class Parser {
         return new Ast.Stmt.If(condition, thenBody, elseBody);
     }
 
-    private Ast.Stmt.For parseForStmt() throws ParseException { // TODO: re test this (since it called parseStmt in itself)
+    private Ast.Stmt.For parseForStmt() throws ParseException {
         // for_stmt ::= 'FOR' identifier 'IN' expr 'DO' stmt* 'END'
         if (!tokens.peek("FOR")) {
             throw new ParseException("FOR expected");
@@ -198,7 +246,6 @@ public final class Parser {
         return new Ast.Stmt.For(name, expr, body);
     }
 
-
     private Ast.Stmt.Return parseReturnStmt() throws ParseException {
         // return_stmt ::= 'RETURN' expr? ';'
         if (!tokens.peek("RETURN")) {
@@ -219,7 +266,6 @@ public final class Parser {
 
         return new Ast.Stmt.Return(expr);
     }
-
 
     private Ast.Stmt parseExpressionOrAssignmentStmt() throws ParseException {
         // expression_or_assignment_stmt ::= expr ('=' expr)? ';'
@@ -243,16 +289,6 @@ public final class Parser {
     }
 
     public Ast.Expr parseExpr() throws ParseException {
-        // call the correct expression
-//        if (!tokens.has(0)) {
-//            throw new ParseException("Unexpected end of input");
-//        }
-//        var i = 0;
-//        while (tokens.has(i)) {
-//            Token token = tokens.get(i);  // Get each token by index
-//            System.out.println("Token " + i + ": " + token);  // Print the token
-//            i += 1;
-//        }
         return parseLogicalExpr();
     }
 
@@ -318,25 +354,33 @@ public final class Parser {
 
             var name = tokens.get(-1).literal();
 
-            if (tokens.peek("(")) { // function
-                checkState(tokens.match("("));
-                var arguments = new ArrayList<Ast.Expr>();
-                while (!tokens.peek(")")) {
-                    do {
-                        arguments.add(parseExpr());
-                    } while (tokens.match(","));
-                }
+            if (tokens.peek("(")) { // method call
+                tokens.match("(");
+                List<Ast.Expr> arguments = new ArrayList<>();
+
                 if (!tokens.peek(")")) {
-                    throw new ParseException("Missing ')' at end of expression.");
+                    arguments.add(parseExpr());
+
+                    while (tokens.match(",")) {
+                        if (tokens.peek(")")) {
+                            throw new ParseException("Expected expression after ','");
+                        }
+                        arguments.add(parseExpr());
+                    }
+                }
+
+                if (!tokens.peek(")")) {
+                    throw new ParseException("Missing ')' at end of method arguments.");
                 }
                 tokens.match(")");
+
                 expression = new Ast.Expr.Method(expression, name, arguments);
             } else {
-                // Property
+                // property
                 expression = new Ast.Expr.Property(expression, name);
             }
         }
-        return expression; // not a secondary expression
+        return expression;
     }
 
     private Ast.Expr parsePrimaryExpr() throws ParseException { //TODO: add object exprs
@@ -454,27 +498,35 @@ public final class Parser {
 
     private Ast.Expr parseVariableOrFunctionExpr() throws ParseException {
         // variable_or_function_expr ::= identifier ('(' (expr (',' expr)*)? ')')?
+
         if (!tokens.peek(Token.Type.IDENTIFIER)) {
             throw new ParseException("Expected IDENTIFIER in variable/function expression");
         }
         tokens.match(Token.Type.IDENTIFIER);
-        var name = tokens.get(-1).literal();
+        String name = tokens.get(-1).literal();
 
-        if (tokens.peek("(")) { // function
-            if (!tokens.peek("(")) {
-                throw new ParseException("Expected '('");
-            }
+        if (tokens.peek("(")) {
             tokens.match("(");
-            var arguments = new ArrayList<Ast.Expr>();
-            while (!tokens.peek(")")) {
-                do {
+            List<Ast.Expr> arguments = new ArrayList<>();
+
+            if (!tokens.peek(")")) {
+                // First argument
+                arguments.add(parseExpr());
+
+                // Additional arguments (must be comma-separated)
+                while (tokens.match(",")) {
+                    if (tokens.peek(")")) {
+                        throw new ParseException("Expected expression after ','");
+                    }
                     arguments.add(parseExpr());
-                } while (tokens.match(","));
+                }
             }
+
             if (!tokens.peek(")")) {
                 throw new ParseException("Expected ')'");
             }
             tokens.match(")");
+
             return new Ast.Expr.Function(name, arguments);
         }
 

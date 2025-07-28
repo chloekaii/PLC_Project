@@ -1,43 +1,35 @@
-package plc.project.parser;
+package plc.project.analyzer;
 
 import org.checkerframework.checker.nullness.qual.Nullable;
 
 import java.util.List;
 import java.util.Optional;
-import java.util.stream.Stream;
 
 /**
  * IMPORTANT: DO NOT CHANGE! This file is part of our project's API and should
  * not be modified by your solution.
  */
-public sealed interface Ast {
+public sealed interface Ir {
 
     record Source(
         List<Stmt> statements
-    ) implements Ast {}
+    ) implements Ir {}
 
-    sealed interface Stmt extends Ast {
+    sealed interface Stmt extends Ir {
 
         record Let(
             String name,
-            Optional<String> type,
+            Type type,
             Optional<Expr> value
-        ) implements Stmt {
-            public Let(String name, Optional<Expr> value) {
-                this(name, Optional.empty(), value);
-            }
-        }
+        ) implements Stmt {}
 
         record Def(
             String name,
-            List<String> parameters,
-            List<Optional<String>> parameterTypes, //a Parameter class is better, but not compatible with existing uses.
-            Optional<String> returnType,
+            List<Parameter> parameters,
+            Type returns,
             List<Stmt> body
         ) implements Stmt {
-            public Def(String name, List<String> parameters, List<Stmt> body) {
-                this(name, parameters, Stream.generate(Optional::<String>empty).limit(parameters.size()).toList(), Optional.empty(), body);
-            }
+            public record Parameter(String name, Type type) {}
         }
 
         record If(
@@ -48,6 +40,7 @@ public sealed interface Ast {
 
         record For(
             String name,
+            Type type,
             Expr expression,
             List<Stmt> body
         ) implements Stmt {}
@@ -60,62 +53,87 @@ public sealed interface Ast {
             Expr expression
         ) implements Stmt {}
 
-        record Assignment(
-            Expr expression,
-            Expr value
-        ) implements Stmt {}
+        sealed interface Assignment extends Stmt {
+
+            record Variable(
+                Expr.Variable variable,
+                Expr value
+            ) implements Assignment {}
+
+            record Property(
+                Expr.Property property,
+                Expr value
+            ) implements Assignment {}
+
+        }
 
     }
 
-    sealed interface Expr extends Ast {
+    sealed interface Expr extends Ir {
+
+        Type type();
 
         record Literal(
-            @Nullable Object value
+            @Nullable Object value,
+            Type type
         ) implements Expr {}
 
         record Group(
             Expr expression
-        ) implements Expr {}
+        ) implements Expr {
+
+            @Override
+            public Type type() {
+                return expression.type();
+            }
+
+        }
 
         record Binary(
             String operator,
             Expr left,
-            Expr right
+            Expr right,
+            Type type
         ) implements Expr {}
 
         record Variable(
-            String name
+            String name,
+            Type type
         ) implements Expr {}
 
         record Property(
             Expr receiver,
-            String name
+            String name,
+            Type type
         ) implements Expr {}
 
         record Function(
             String name,
-            List<Expr> arguments
+            List<Expr> arguments,
+            Type type
         ) implements Expr {}
 
         record Method(
             Expr receiver,
             String name,
-            List<Expr> arguments
+            List<Expr> arguments,
+            Type type
         ) implements Expr {}
 
         //Using "ObjectExpr" to avoid confusion with Java's "Object"
         record ObjectExpr(
             Optional<String> name,
             List<Stmt.Let> fields,
-            List<Stmt.Def> methods
+            List<Stmt.Def> methods,
+            Type type
         ) implements Expr {}
 
     }
 
     interface Visitor<T, E extends Exception> {
 
-        default T visit(Ast ast) throws E {
-            return switch (ast) {
+        default T visit(Ir ir) throws E {
+            return switch (ir) {
                 case Source source -> visit(source);
                 case Stmt.Let stmt -> visit(stmt);
                 case Stmt.Def stmt -> visit(stmt);
@@ -123,7 +141,8 @@ public sealed interface Ast {
                 case Stmt.For stmt -> visit(stmt);
                 case Stmt.Return stmt -> visit(stmt);
                 case Stmt.Expression stmt -> visit(stmt);
-                case Stmt.Assignment stmt -> visit(stmt);
+                case Stmt.Assignment.Variable stmt -> visit(stmt);
+                case Stmt.Assignment.Property stmt -> visit(stmt);
                 case Expr.Literal expr -> visit(expr);
                 case Expr.Group expr -> visit(expr);
                 case Expr.Binary expr -> visit(expr);
@@ -135,22 +154,23 @@ public sealed interface Ast {
             };
         }
 
-        T visit(Source ast) throws E;
-        T visit(Stmt.Let ast) throws E;
-        T visit(Stmt.Def ast) throws E;
-        T visit(Stmt.If ast) throws E;
-        T visit(Stmt.For ast) throws E;
-        T visit(Stmt.Return ast) throws E;
-        T visit(Stmt.Expression ast) throws E;
-        T visit(Stmt.Assignment ast) throws E;
-        T visit(Expr.Literal ast) throws E;
-        T visit(Expr.Group ast) throws E;
-        T visit(Expr.Binary ast) throws E;
-        T visit(Expr.Variable ast) throws E;
-        T visit(Expr.Property ast) throws E;
-        T visit(Expr.Function ast) throws E;
-        T visit(Expr.Method ast) throws E;
-        T visit(Expr.ObjectExpr ast) throws E;
+        T visit(Source ir) throws E;
+        T visit(Stmt.Let ir) throws E;
+        T visit(Stmt.Def ir) throws E;
+        T visit(Stmt.If ir) throws E;
+        T visit(Stmt.For ir) throws E;
+        T visit(Stmt.Return ir) throws E;
+        T visit(Stmt.Expression ir) throws E;
+        T visit(Stmt.Assignment.Variable ir) throws E;
+        T visit(Stmt.Assignment.Property ir) throws E;
+        T visit(Expr.Literal ir) throws E;
+        T visit(Expr.Group ir) throws E;
+        T visit(Expr.Binary ir) throws E;
+        T visit(Expr.Variable ir) throws E;
+        T visit(Expr.Property ir) throws E;
+        T visit(Expr.Function ir) throws E;
+        T visit(Expr.Method ir) throws E;
+        T visit(Expr.ObjectExpr ir) throws E;
 
     }
 

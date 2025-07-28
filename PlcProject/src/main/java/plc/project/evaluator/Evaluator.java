@@ -117,27 +117,24 @@ public final class Evaluator implements Ast.Visitor<RuntimeValue, EvaluateExcept
     @Override
     public RuntimeValue visit(Ast.Stmt.For ast) throws EvaluateException {
         RuntimeValue iterableValue = visit(ast.expression());
-        if (!(iterableValue instanceof RuntimeValue.Primitive(Object value)) ||
-                !(value instanceof List<?> list)) {
+
+        if (!(iterableValue instanceof RuntimeValue.Primitive(Object value)) || !(value instanceof List<?> list)) {
             throw new EvaluateException("For-loop value must be a list.");
         }
         RuntimeValue result = new RuntimeValue.Primitive(null);
         for (Object item : list) {
-            Scope iterationScope = new Scope(scope);
-
-            if (item instanceof RuntimeValue.Primitive) {
-                iterationScope.define(ast.name(), (RuntimeValue.Primitive) item);
-            } else {
-                iterationScope.define(ast.name(), new RuntimeValue.Primitive(item));
+            if (!(item instanceof RuntimeValue.Primitive p) || !(p.value() instanceof BigInteger)) {
+                throw new EvaluateException("Iterable elements must be integers.");
             }
-
+            Scope iterationScope = new Scope(scope);
+            iterationScope.define(ast.name(), p);
             Evaluator loopEvaluator = new Evaluator(iterationScope);
 
             for (Ast.Stmt stmt : ast.body()) {
                 loopEvaluator.visit(stmt);
             }
         }
-        return result; // should always return NIL
+        return result;
     }
 
     @Override
@@ -164,25 +161,28 @@ public final class Evaluator implements Ast.Visitor<RuntimeValue, EvaluateExcept
 
     @Override
     public RuntimeValue visit(Ast.Stmt.Assignment ast) throws EvaluateException {
-        RuntimeValue value = visit(ast.value());
-
         if (ast.expression() instanceof Ast.Expr.Variable variable) {
             String name = variable.name();
             if (scope.get(name, false).isEmpty()) {
                 throw new EvaluateException("Variable is not defined: " + name);
             }
+            RuntimeValue value = visit(ast.value());
             scope.set(name, value);
+            return value;
         } else if (ast.expression() instanceof Ast.Expr.Property property) {
             RuntimeValue receiver = visit(property.receiver());
             if (!(receiver instanceof RuntimeValue.ObjectValue object)) {
                 throw new EvaluateException("Receiver must be an object.");
             }
+            RuntimeValue value = visit(ast.value());
+            if (object.scope().get(property.name(), true).isEmpty()) {
+                throw new EvaluateException("Property is not defined: " + property.name());
+            }
             object.scope().set(property.name(), value);
+            return value;
         } else {
             throw new EvaluateException("Invalid assignment target.");
         }
-
-        return value;
     }
 
     @Override
@@ -238,7 +238,7 @@ public final class Evaluator implements Ast.Visitor<RuntimeValue, EvaluateExcept
                 yield switch (ast.operator()) {
                     case "+" -> {
                         if (leftValue instanceof String || rightValue instanceof String) {
-                            yield new RuntimeValue.Primitive(leftValue.toString() + rightValue.toString());
+                            yield new RuntimeValue.Primitive(String.valueOf(leftValue) + String.valueOf(rightValue));
                         } else if (leftValue instanceof BigDecimal l && rightValue instanceof BigDecimal r) {
                             yield new RuntimeValue.Primitive(l.add(r));
                         } else if (leftValue instanceof BigInteger l && rightValue instanceof BigInteger r) {
